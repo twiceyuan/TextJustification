@@ -2,20 +2,22 @@ package com.twiceyuan.textjustification;
 
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
+import android.text.Spannable;
 import android.text.SpannableString;
-import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.TextPaint;
 import android.text.style.ImageSpan;
 import android.widget.TextView;
 
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Created by twiceYuan on 2017/5/6.
  * <p>
  * 使用 Spannable 让 TextView 文字两端对齐。
- *
+ * <p>
  * 原理是测量原始行中空格占用的宽度总和，让行尾的空白平均到所有空格中去。使用 Span 来代替空格保证空格的宽度不受字体影响。
  */
 public class TextJustification {
@@ -31,8 +33,12 @@ public class TextJustification {
         // 用于测量文字宽度，计算分散对齐后的空格宽度
         final TextPaint textPaint = textView.getPaint();
 
+        CharSequence textViewText = textView.getText();
+
         // 分散对齐后的文字
-        final SpannableStringBuilder builder = new SpannableStringBuilder();
+        final Spannable builder = textViewText instanceof Spannable ?
+                (Spannable) textViewText :
+                new SpannableString(textString);
 
         // 在 TextView 完成测量绘制之后执行
         textView.post(new Runnable() {
@@ -57,7 +63,6 @@ public class TextJustification {
 
                         // 最后一行不做处理
                         if (i == lineCount - 1) {
-                            builder.append(new SpannableString(lineString));
                             break;
                         }
 
@@ -71,21 +76,25 @@ public class TextJustification {
                         // 两端对齐时每个空格的重新计算的宽度
                         float eachSpaceWidth = (textViewWidth - removeSpaceWidth) / spaceCount;
 
-                        SpannableString spannableString = new SpannableString(lineString);
-                        for (int j = 0; j < trimSpaceText.length(); j++) {
-                            char c = trimSpaceText.charAt(j);
+                        // 两端空格需要单独处理
+                        Set<Integer> endsSpace = spacePositionInEnds(lineString);
+                        for (int j = 0; j < lineString.length(); j++) {
+                            char c = lineString.charAt(j);
+
+                            // 使用透明的 drawable 来填充空格部分
+                            Drawable drawable = new ColorDrawable(0x00ffffff);
+
                             if (c == ' ') {
-                                // 之前使用了 AbsoluteSizeSpan 来设置空格的 span，不过会行高所以替换为了 ImageSpan
-                                // AbsoluteSizeSpan spaceSpan = new AbsoluteSizeSpan(dp2px(context, eachSpaceWidth));
-                                // 使用透明的 drawable 来填充空格部分
-                                Drawable drawable = new ColorDrawable(0x00ffffff);
-                                drawable.setBounds(0, 0, (int) eachSpaceWidth, 0);
+                                if (endsSpace.contains(j)) {
+                                    // 如果是两端的空格，则宽度置为 0
+                                    drawable.setBounds(0, 0, 0, 0);
+                                } else {
+                                    drawable.setBounds(0, 0, (int) eachSpaceWidth, 0);
+                                }
                                 ImageSpan span = new ImageSpan(drawable);
-                                spannableString.setSpan(span, j, j + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                builder.setSpan(span, lineStart + j, lineStart + j + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                             }
                         }
-
-                        builder.append(spannableString);
                     }
 
                     textView.setText(builder);
@@ -94,5 +103,35 @@ public class TextJustification {
                 }
             }
         });
+    }
+
+    /**
+     * 返回两端的空格坐标，例如字符串 " abc  "（前面一个空格，后面两个空格）就返回 [0, 5, 6]
+     */
+    private static Set<Integer> spacePositionInEnds(String string) {
+        Set<Integer> result = new HashSet<>();
+        for (int i = 0; i < string.length(); i++) {
+            char c = string.charAt(i);
+            if (c == ' ') {
+                result.add(i);
+            } else {
+                break;
+            }
+        }
+
+        if (result.size() == string.length()) {
+            return result;
+        }
+
+        for (int i = string.length() - 1; i > 0; i--) {
+            char c = string.charAt(i);
+            if (c == ' ') {
+                result.add(i);
+            } else {
+                break;
+            }
+        }
+
+        return result;
     }
 }
